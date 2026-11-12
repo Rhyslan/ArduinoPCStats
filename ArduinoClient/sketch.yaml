@@ -1,0 +1,15 @@
+profiles:
+  profile-1794464097625:
+    fqbn: arduino:avr:uno
+    platforms:
+      - platform: arduino:avr (1.8.8)
+    libraries:
+      - LedControl (1.0.6)
+    port: COM3
+    port_config:
+      baudrate: "115200"
+      lineEnding: "\r\n"
+      bits: "8"
+      parity: none
+      stop_bits: one
+default_profile: profile-1794464097625
