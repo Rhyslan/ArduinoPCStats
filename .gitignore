@@ -182,3 +182,4 @@ cython_debug/
 
 # Other stuff:
 **/.vscode
+/PCInterface/.idea
