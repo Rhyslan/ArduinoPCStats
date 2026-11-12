@@ -1,4 +1,5 @@
 #include <avr/pgmspace.h>
+#include <ArduinoJson.h>
 #include "LedControl.h"
 #include "font.h"
 
@@ -15,9 +16,28 @@ void setup() {
     lc.shutdown(0, false);
     lc.setIntensity(0, 8);
     lc.clearDisplay(0);
+
+    Serial.begin(115200);
+    Serial.setTimeout(5);
 }
 
 void loop() {
+    if (Serial.available() > 0) {
+        String input = Serial.readString();
+    
+        JsonDocument doc;
+    
+        deserializeJson(doc, input);
+    
+        byte charToDisp = doc["charIndex"];
+        Serial.print(charToDisp);
+    
+        displayChar(charToDisp, TOP_LEFT, false);
+    
+        delay(10);
+    }
+
+
     // for (int i = 0; i < 4; i++) {
     //     for (int j = 0; j < 36; j++) {
     //         displayChar(j, (enum Quadrant)i, false);
@@ -25,19 +45,19 @@ void loop() {
     //     }
     // }
 
-    spinDisplayChar(_C, TOP_LEFT, false);
-    spinDisplayChar(_U, TOP_RIGHT, false);
-    spinDisplayChar(2, BOTTOM_LEFT, true);
-    spinDisplayChar(5, BOTTOM_RIGHT, true);
+    // spinDisplayChar(_C, TOP_LEFT, false);
+    // spinDisplayChar(_U, TOP_RIGHT, false);
+    // spinDisplayChar(2, BOTTOM_LEFT, true);
+    // spinDisplayChar(5, BOTTOM_RIGHT, true);
 
-    delay(2000);
+    // delay(2000);
 
-    spinDisplayChar(_C, TOP_LEFT, false);
-    spinDisplayChar(_T, TOP_RIGHT, false);
-    spinDisplayChar(7, BOTTOM_LEFT, true);
-    spinDisplayChar(0, BOTTOM_RIGHT, true);
+    // spinDisplayChar(_C, TOP_LEFT, false);
+    // spinDisplayChar(_T, TOP_RIGHT, false);
+    // spinDisplayChar(7, BOTTOM_LEFT, true);
+    // spinDisplayChar(0, BOTTOM_RIGHT, true);
     
-    delay(2000);
+    // delay(2000);
 }
 
 void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore) {
