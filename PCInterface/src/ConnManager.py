@@ -9,7 +9,6 @@ import serial
 START_BYTE = 0xAA
 
 
-
 def calc_checksum(data):
     checksum: int = 0
 
@@ -20,22 +19,22 @@ def calc_checksum(data):
 
 
 class Command(Enum):
-    ACK = 0x01
-    PING = 0x02
-    UPDATE_STAT = 0x03
-    CHANGE_STAT = 0x04
-    BTN_PRESS = 0x05
-    BTN_RELEASE = 0x06
-    SET_STATE = 0x07
-    REQUEST_STAT = 0x08
+    ACK = 0x00
+    PING = 0x01
+    UPDATE_STAT = 0x02
+    CHANGE_STAT = 0x03
+    BTN_PRESS = 0x04
+    BTN_RELEASE = 0x05
+    SET_STATE = 0x06
+    REQUEST_STAT = 0x07
 
 
 class ConnManager:
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
         if not self.debug_mode:
-            self.arduino = serial.Serial(port="COM3", baudrate=115200)
-        time.sleep(1)
+            self.arduino = serial.Serial(port="COM3", baudrate=115200, timeout=1, dsrdtr=False)
+        time.sleep(5)
 
         self.command_lengths = {
             Command.ACK: 0,
@@ -69,8 +68,7 @@ class ConnManager:
         return packet
 
     def send_to_arduino(self, packet: bytearray):
+        print(f"Sending packet: {packet.hex()}...")
         if not self.debug_mode:
             self.arduino.write(packet)
-        else:
-            print(f"Sending packet: {packet.hex()}...")
         time.sleep(0.05)
