@@ -18,7 +18,6 @@ void setup() {
     lc.clearDisplay(0);
 
     Serial.begin(115200);
-    Serial.setTimeout(5);
 }
 
 void loop() {

@@ -1,38 +1,35 @@
 # Filename: main.py
 # Created: 12/11/2026
 # Description:
-
-import serial
-import time
-import json
+from ConnManager import ConnManager, Command
 
 
 def main():
-    arduino = serial.Serial(port="COM3", baudrate=115200, timeout=0.5)
+    conn_man = ConnManager(True)
 
-    time.sleep(1)
+    packet = conn_man.create_packet(Command.ACK)
+    conn_man.send_to_arduino(packet)
 
-    for x in range(37):
-        jsonified = json.dumps({
-            "charIndex": x
-        })
+    packet = conn_man.create_packet(Command.PING)
+    conn_man.send_to_arduino(packet)
 
-        arduino.write(bytes(jsonified, "utf-8"))
-        time.sleep((0.5))
+    packet = conn_man.create_packet(Command.UPDATE_STAT, bytes([0x00, 0x25]))
+    conn_man.send_to_arduino(packet)
 
-'''
-    while(True):
-        charIndex = input("Char index: ")
+    packet = conn_man.create_packet(Command.CHANGE_STAT, bytes([0x00, ord("C"), ord("U"), 0x0F]))
+    conn_man.send_to_arduino(packet)
 
-        jsonified = json.dumps({
-            "charIndex": int(charIndex)
-        })
+    packet = conn_man.create_packet(Command.BTN_PRESS, bytes([0x00]))
+    conn_man.send_to_arduino(packet)
 
-        arduino.write(bytes(jsonified, "utf-8"))
-        print(bytes(jsonified, "utf-8"))
+    packet = conn_man.create_packet(Command.BTN_RELEASE, bytes([0x00]))
+    conn_man.send_to_arduino(packet)
 
-        time.sleep(0.05)
-        '''
+    packet = conn_man.create_packet(Command.SET_STATE, bytes([0x00, 0x01]))
+    conn_man.send_to_arduino(packet)
+
+    packet = conn_man.create_packet(Command.REQUEST_STAT, bytes([0x01]))
+    conn_man.send_to_arduino(packet)
 
 if __name__ == '__main__':
     main()
