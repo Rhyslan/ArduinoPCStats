@@ -92,12 +92,10 @@ void setup()
     lc.clearDisplay(0);
 
     Serial.begin(115200);
-    Serial.println(millis());
     spinDisplayChar(_SPACE, TOP_LEFT, false);
     spinDisplayChar(_SPACE, TOP_RIGHT, false);
     spinDisplayChar(_SPACE, BOTTOM_LEFT, true);
     spinDisplayChar(_SPACE, BOTTOM_RIGHT, true);
-    Serial.println(millis());
 }
 
 void loop()
