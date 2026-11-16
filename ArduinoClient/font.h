@@ -4,7 +4,7 @@
 #include <avr/pgmspace.h>
 
 // Character indexes
-enum FontChar {
+enum FontCharIndex {
     _0,     // 0
     _1,     // 1
     _2,     // 2

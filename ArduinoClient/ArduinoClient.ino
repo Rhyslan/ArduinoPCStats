@@ -6,19 +6,17 @@
 #define MAX_DATA_LENGTH 4
 #define START_BYTE 0xAA
 
-bool connected = false;
 
 /* #region Display Variables */
 
-LedControl lc = LedControl(2, 4, 3, 1); // DIN -> pin 8, CLK -> pin 10, CS -> pin 9, 1 device
-
-enum Quadrant
-{
+enum Quadrant {
     TOP_LEFT,
     TOP_RIGHT,
     BOTTOM_LEFT,
     BOTTOM_RIGHT
 };
+
+LedControl lc = LedControl(2, 4, 3, 1); // DIN -> pin 8, CLK -> pin 10, CS -> pin 9, 1 device
 
 /* #endregion */
 
@@ -31,6 +29,7 @@ enum ReceiveState {
     READ_DATA
 };
 
+// Packet reception
 ReceiveState rxState = WAIT_START;
 byte rxCommand;
 byte rxLength;
@@ -42,6 +41,7 @@ unsigned long lastByteTime = 0;
 const unsigned long RX_TIMEOUT = 100;
 
 bool acknowledged = false;
+bool connected = false;
 
 /* #endregion */
 
@@ -89,6 +89,10 @@ Stat stats[] = {
 const int muteLedPin = 6;
 const int muteBtnPin = 7;
 
+enum StateID {
+    MUTE,
+};
+
 int muteBtnState = HIGH;
 int lastMuteBtnState = HIGH;
 
@@ -97,14 +101,9 @@ int muteLedState = LOW;
 unsigned long lastDebounceTime = 0;
 unsigned long debounceDelay = 50;
 
-enum StateID {
-    MUTE,
-};
-
 /* #endregion */
 
-void setup()
-{
+void setup() {
     // Setup IO pins
     pinMode(muteLedPin, OUTPUT);
     pinMode(LED_BUILTIN, OUTPUT);
@@ -115,86 +114,95 @@ void setup()
     lc.setIntensity(0, 8);
     lc.clearDisplay(0);
 
-    // Setup mute LED
+    // Setup LEDs
     digitalWrite(muteLedPin, muteLedState);
+    digitalWrite(LED_BUILTIN, acknowledged);
 
     // Start serial connection
     Serial.begin(115200);
 
     // Do boot animation
-    //spinDisplayChar(_SPACE, TOP_LEFT, false);
-    //spinDisplayChar(_SPACE, TOP_RIGHT, false);
-    //spinDisplayChar(_SPACE, BOTTOM_LEFT, true);
-    //spinDisplayChar(_SPACE, BOTTOM_RIGHT, true);
+    spinDisplayChar(_SPACE, TOP_LEFT, false);
+    spinDisplayChar(_SPACE, TOP_RIGHT, false);
+    spinDisplayChar(_SPACE, BOTTOM_LEFT, true);
+    spinDisplayChar(_SPACE, BOTTOM_RIGHT, true);
 }
 
-void loop()
-{
+void loop() {
+    // Use built-in LED to show acknowledged state
     digitalWrite(LED_BUILTIN, acknowledged);
 
     receiveSerial();
 
+    // If connected, allow stuff to happen, otherwise wait for connection acknowledgement
     if (connected) {
         toggleMute();
+    } else {
+        connected = checkAcknowledged();
     }
 }
 
 /* #region Display Functions */
 
-void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore)
-{
+/// @brief Displays a character in the specified quadrant of the LED matrix
+/// @param charIndex The index of the character to display (see `font.h`)
+/// @param quadrant Which quadrant of the LED matrix to display the character in
+/// @param blankBefore If the blank column should be before the character instead of after
+void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
     int rowOffset;
     int colOffset;
 
-    switch (quadrant)
-    {
-    case TOP_LEFT:
-        rowOffset = 0;
-        colOffset = 0;
-        break;
-    case TOP_RIGHT:
-        rowOffset = 0;
-        colOffset = 4;
-        break;
-    case BOTTOM_LEFT:
-        rowOffset = 4;
-        colOffset = 0;
-        break;
-    case BOTTOM_RIGHT:
-        rowOffset = 4;
-        colOffset = 4;
-        break;
+    // Set offsets depending on which quadrant to display in
+    switch (quadrant) {
+        case TOP_LEFT:
+            rowOffset = 0;
+            colOffset = 0;
+            break;
+        case TOP_RIGHT:
+            rowOffset = 0;
+            colOffset = 4;
+            break;
+        case BOTTOM_LEFT:
+            rowOffset = 4;
+            colOffset = 0;
+            break;
+        case BOTTOM_RIGHT:
+            rowOffset = 4;
+            colOffset = 4;
+            break;
     }
 
-    for (int row = 0; row < 4; row++)
-    {
+    // Loop through each pixel in the character and update the LED matrix
+    for (int row = 0; row < 4; row++) {
         byte charRow = pgm_read_byte(&font[charIndex][row]);
 
-        for (int col = 0; col < 4; col++)
-        {
+        for (int col = 0; col < 4; col++) {
+            // Set blank column position
             int charCol = blankBefore ? col - 1 : col;
 
             bool pixelOn = false;
 
-            if (charCol >= 0 && charCol < 3)
-            {
+            if (charCol >= 0 && charCol < 3) {
                 pixelOn = bitRead(charRow, 2 - charCol);
             }
-
+            
             lc.setLed(0, rowOffset + row, colOffset + col, pixelOn);
         }
     }
 }
 
-void spinDisplayChar(byte charIndex, Quadrant quadrant, bool blankBefore)
-{
-    for (int i = 0; i < 37; i++)
-    {
+/// @brief Cycles through displaying each character in the font definition until the specified character is found
+/// @param charIndex The index of the character to display (see `font.h`)
+/// @param quadrant Which quadrant of the LED matrix to display the character in
+/// @param blankBefore If the blank column should be before the character instead of after
+void spinDisplayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
+    // Cycle through each character in the font definition
+    for (int i = 0; i < 37; i++) {
         displayChar(i, quadrant, blankBefore);
+        // Delay so its not too fast
         delay(25);
-        if (i == charIndex)
-        {
-            break;
+        if (i == charIndex) {
+            break;  // Stop once character is found/displayed
         }
     }
 }
@@ -203,11 +211,14 @@ void spinDisplayChar(byte charIndex, Quadrant quadrant, bool blankBefore)
 
 /* #region Comms Functions */
 
+/// @brief Receive serial messages from the Python script
 void receiveSerial() {
+    // Timeout if waiting too long for next byte of the command
     if (rxState != WAIT_START && millis() - lastByteTime > RX_TIMEOUT) {
         rxState = WAIT_START;
     }
 
+    // Loop while bytes are available
     while (Serial.available() > 0) {
         byte incoming = Serial.read();
         lastByteTime = millis();
@@ -270,8 +281,7 @@ void processPacket() {
         return;
     }
 
-    switch (rxCommand)
-    {
+    switch (rxCommand) {
         case ACK:
             acknowledged = true;
             break;

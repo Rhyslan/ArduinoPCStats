@@ -1,6 +1,6 @@
-# Filename: ConnManager.py
+# Filename: ArduinoConnectionManager.py
 # Created: 13/11/2026
-# Description:
+# Description: Communication manager for messages between Arduino and Python
 import serial
 import time
 from enum import Enum, auto
@@ -9,24 +9,6 @@ from enum import Enum, auto
 START_BYTE = 0xAA
 MAX_DATA_LENGTH = 4
 RX_TIMEOUT = 100
-
-
-def calc_checksum(data):
-    """
-
-    :param data:
-    :return:
-    """
-    checksum: int = 0
-
-    for byte in data:
-        checksum ^= byte
-
-    return  checksum
-
-def millis():
-    return time.monotonic_ns() // 1_000_000
-
 
 # Enums
 class Command(Enum):
@@ -43,22 +25,34 @@ class ReceiveState(Enum):
     READ_LENGTH = auto()
     READ_DATA = auto()
 
+
 class ButtonID(Enum):
     MUTE = 0
 
 
 # Main class
-class ConnManager:
-    def __init__(self, debug_mode=False):
+class ArduinoConnectionManager:
+    def __init__(self, com_port, debug_mode=False):
+        """
+        Connection manager for Arduino and Python
+        :param str com_port: COM port for the Arduino
+        :param bool debug_mode: Enable debug mode to disable serial connection
         """
 
-        :param debug_mode:
-        """
         self.debug_mode = debug_mode
 
         if not self.debug_mode:
-            self.arduino = serial.Serial(port="COM3", baudrate=115200, timeout=1, dsrdtr=False)
+            try:
+                self.arduino = serial.Serial(port=com_port, baudrate=115200, timeout=1)
+            except serial.serialutil.SerialException as e:
+                print(f"Unable to connect to Arduino on port \"{com_port}\".")
+                if input("Would you like to continue in debug mode? (y/n)") == "y":
+                    self.debug_mode = True
+                else:
+                    quit()
 
+
+        # Length of data array for each command
         self.command_lengths = {
             Command.ACK: 0,
             Command.PING: 0,
@@ -76,10 +70,14 @@ class ConnManager:
         self.data_index = 0
         self.last_byte_time = 0
 
-        self.acknowledged = False
-
         # States
+        self.acknowledged = False
         self.muted = False
+
+        # Skip connection check if in debug mode
+        if self.debug_mode:
+            print("Running in debug mode")
+            return
 
         # Wait for connection acknowledge from Arduino
         self.connected = False
@@ -87,6 +85,7 @@ class ConnManager:
         self.send_to_arduino(self.create_packet(Command.PING))
         last_ping = millis()
         while not self.connected:
+            # Ping Arduino every second
             if millis() - last_ping > 1000:
                 self.send_to_arduino(self.create_packet(Command.PING))
                 last_ping = millis()
@@ -94,39 +93,43 @@ class ConnManager:
             self.read()
 
             if self.check_acknowledged():
+                # Inform Arduino of connection success
+                self.send_to_arduino(self.create_packet(Command.ACK))
                 self.connected = True
                 print("Arduino connected")
 
     def read(self):
         """
-
-        :return:
+        Read serial messages from the Arduino
+        :return: None
         """
+        # Skip if in debug mode
         if self.debug_mode:
             return
 
-        # Timeout if waiting too long for next byte of command
+        # Timeout if waiting too long for next byte of the command
         if self.rx_state != ReceiveState.WAIT_START and millis() - self.last_byte_time > RX_TIMEOUT:
             self.rx_state = ReceiveState.WAIT_START
 
         # Loop while bytes are available
         while self.arduino.in_waiting > 0:
+            # Get next byte
             incoming = self.arduino.read(1)
             self.last_byte_time = millis()
 
             match self.rx_state:
                 case ReceiveState.WAIT_START:
+                    # Process command if byte is START_BYTE, otherwise treat as debug string
                     if incoming[0] == START_BYTE:
                         self.rx_state = ReceiveState.READ_COMMAND
                     else:
                         debug_data = incoming + self.arduino.readline()
                         text = debug_data.decode("utf-8", errors="ignore").strip()
-
-                        if text:
-                            print(f"Arduino debug: {text}")
+                        print(f"Arduino debug: {text}")
                 case ReceiveState.READ_COMMAND:
                     self.rx_command = incoming[0]
 
+                    # Reset if unknown command
                     if Command(self.rx_command) not in self.command_lengths:
                         self.rx_state = ReceiveState.WAIT_START
                     else:
@@ -134,25 +137,87 @@ class ConnManager:
                 case ReceiveState.READ_LENGTH:
                     self.rx_length = incoming[0]
 
+                    # Reset if length is invalid for received command (wrong length or too long for any command)
                     if self.rx_length != self.command_lengths[Command(self.rx_command)] or self.rx_length > MAX_DATA_LENGTH:
                         self.rx_state = ReceiveState.WAIT_START
                     else:
                         self.data_index = 0
                         self.rx_state = ReceiveState.READ_DATA
                 case ReceiveState.READ_DATA:
+                    # If still reading data, append byte to data array
                     if self.data_index < self.rx_length:
                         self.rx_data[self.data_index] = incoming[0]
                         self.data_index += 1
                     else:
+                        # When done reading data, get checksum
                         self.rx_checksum = incoming[0]
 
-                        self.process_packet()
+                        self._process_packet()
 
+                        # Return to waiting state
                         self.rx_state = ReceiveState.WAIT_START
 
-    def process_packet(self):
+    def create_packet(self, command, data=b''):
+        """
+        Create a new packet to send to the Arduino
+        :param Command command: Command ID
+        :param bytes data: Array of bytes to send as the payload
+        :return bytearray: New packet bytearray
+        """
+        # Ensure command is known
+        if command not in self.command_lengths:
+            raise ValueError(f"Unknown command: {command}")
+
+        # Ensure data is the correct length for the command
+        if len(data) != self.command_lengths[command]:
+            raise ValueError(f"Invalid paylad for command {command}: expected {self.command_lengths[command]}, got {len(data)}")
+
+        # Create packet bytearray
+        packet = bytearray([
+            START_BYTE,
+            command.value,
+            len(data)
+        ])
+
+        packet.extend(data)
+
+        # Calculate checksum
+        checksum: int = 0
+        for byte in packet[1:]:
+            checksum ^= byte
+
+        packet.append(checksum)
+
+        return packet
+
+    def send_to_arduino(self, packet):
+        """
+        Send a packet to the Arduino. Only prints packet if in debug mode
+        :param bytearray packet: Packet to send
+        :return: None
+        """
+        print(f"Sending packet: {packet.hex()}...")
+        if not self.debug_mode:
+            self.arduino.write(packet)
+
+    def check_acknowledged(self):
+        """
+        Checks if the Arduino has acknowledged a command since the last check
+        :return: Boolean indicating acknowledgement
+        """
+        if self.acknowledged:
+            self.acknowledged = False
+            return True
+        return False
+
+    def _process_packet(self):
+        """
+        Process received packet. Validates checksum then handles the command
+        :return: None
+        """
         # Verify checksum
         checksum = 0
+
         checksum ^= self.rx_command
         checksum ^= self.rx_length
 
@@ -163,51 +228,33 @@ class ConnManager:
             print("Checksum failed")
             return
 
+        # Handle command
         match Command(self.rx_command):
             case Command.ACK:
                 self.acknowledged = True
             case Command.PING:
+                # Send ping acknowledgement to Arduino
                 self.send_to_arduino(self.create_packet(Command.ACK))
             case Command.BTN_PRESS:
-                self.handle_btn_press(self.rx_data[0])
+                self._handle_btn_press(self.rx_data[0])
 
-    def create_packet(self, command, data=b''):
-        if command not in self.command_lengths:
-            raise ValueError(f"Unknown command: {command}")
-
-        if len(data) != self.command_lengths[command]:
-            raise ValueError(f"Invalid paylad for command {command}: expected {self.command_lengths[command]}, got {len(data)}")
-
-        packet = bytearray([
-            START_BYTE,
-            command.value,
-            len(data)
-        ])
-
-        packet.extend(data)
-
-        checksum = calc_checksum(packet[1:])
-        packet.append(checksum)
-
-        return packet
-
-    def send_to_arduino(self, packet: bytearray):
-        print(f"Sending packet: {packet.hex()}...")
-        if not self.debug_mode:
-            self.arduino.write(packet)
-
-    def handle_btn_press(self, btn_id):
+    def _handle_btn_press(self, btn_id):
+        """
+        Handles button press command
+        :param int btn_id:
+        :return: None
+        """
         match ButtonID(btn_id):
             case ButtonID.MUTE:
                 #do muting
                 self.muted = not self.muted
+                # Change Arduino muted state
                 self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([0x00, self.muted])))
 
 
-
-
-    def check_acknowledged(self):
-        if self.acknowledged:
-            self.acknowledged = False
-            return True
-        return False
+def millis():
+    """
+    Get monotonic time in milliseconds
+    :return: Monotonic time in milliseconds
+    """
+    return time.monotonic_ns() // 1_000_000
