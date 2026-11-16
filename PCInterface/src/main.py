@@ -9,22 +9,26 @@ from ConnManager import ConnManager, Command
 def main():
     conn_man = ConnManager()
 
-    packet = conn_man.create_packet(Command.UPDATE_STAT, bytes([0x00, 0x25]))
+    while True:
+        conn_man.read()
+
+
+    packet = conn_man.create_packet(Command.SET_STATE, bytes([0x00, 0x01]))
     conn_man.send_to_arduino(packet)
 
-    time.sleep(5)
+    time.sleep(1)
 
-    packet = conn_man.create_packet(Command.UPDATE_STAT, bytes([0x01, 0x17]))
+    packet = conn_man.create_packet(Command.SET_STATE, bytes([0x00, 0x00]))
     conn_man.send_to_arduino(packet)
 
-    time.sleep(5)
+    time.sleep(1)
 
-    packet = conn_man.create_packet(Command.CHANGE_STAT, bytes([0x00, ord("T"), ord("M"), 0x0F]))
+    packet = conn_man.create_packet(Command.SET_STATE, bytes([0x00, 0x01]))
     conn_man.send_to_arduino(packet)
 
-    time.sleep(5)
+    time.sleep(1)
 
-    packet = conn_man.create_packet(Command.UPDATE_STAT, bytes([0x00, 0x05]))
+    packet = conn_man.create_packet(Command.SET_STATE, bytes([0x00, 0x00]))
     conn_man.send_to_arduino(packet)
 
 if __name__ == '__main__':

@@ -6,9 +6,11 @@
 #define MAX_DATA_LENGTH 4
 #define START_BYTE 0xAA
 
+bool connected = false;
+
 /* #region Display Variables */
 
-LedControl lc = LedControl(8, 10, 9, 1); // DIN -> pin 8, CLK -> pin 10, CS -> pin 9
+LedControl lc = LedControl(2, 4, 3, 1); // DIN -> pin 8, CLK -> pin 10, CS -> pin 9, 1 device
 
 enum Quadrant
 {
@@ -39,6 +41,8 @@ byte dataIndex = 0;
 unsigned long lastByteTime = 0;
 const unsigned long RX_TIMEOUT = 100;
 
+bool acknowledged = false;
+
 /* #endregion */
 
 /* #region Commands Variables */
@@ -47,22 +51,17 @@ enum Command {
     ACK,
     PING,
     UPDATE_STAT,
-    CHANGE_STAT,
     BTN_PRESS,
-    BTN_RELEASE,
     SET_STATE,
-    REQEUST_STAT
+    COMMAND_COUNT
 };
 
 const byte commandLengths[] = {
     0,  // ACK
     0,  // PING
     2,  // UPDATE_STAT
-    4,  // CHANGE_STAT
     1,  // BTN_PRESS
-    1,  // BTN_RELEASE
     2,  // SET_STATE
-    1   // REQUEST_STAT
 };
 
 /* #endregion */
@@ -85,22 +84,59 @@ Stat stats[] = {
 
 /* #endregion */
 
+/* #region States Variables */
+
+const int muteLedPin = 6;
+const int muteBtnPin = 7;
+
+int muteBtnState = HIGH;
+int lastMuteBtnState = HIGH;
+
+int muteLedState = LOW;
+
+unsigned long lastDebounceTime = 0;
+unsigned long debounceDelay = 50;
+
+enum StateID {
+    MUTE,
+};
+
+/* #endregion */
+
 void setup()
 {
+    // Setup IO pins
+    pinMode(muteLedPin, OUTPUT);
+    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(muteBtnPin, INPUT_PULLUP);
+
+    // Setup LED Matrix
     lc.shutdown(0, false);
     lc.setIntensity(0, 8);
     lc.clearDisplay(0);
 
+    // Setup mute LED
+    digitalWrite(muteLedPin, muteLedState);
+
+    // Start serial connection
     Serial.begin(115200);
-    spinDisplayChar(_SPACE, TOP_LEFT, false);
-    spinDisplayChar(_SPACE, TOP_RIGHT, false);
-    spinDisplayChar(_SPACE, BOTTOM_LEFT, true);
-    spinDisplayChar(_SPACE, BOTTOM_RIGHT, true);
+
+    // Do boot animation
+    //spinDisplayChar(_SPACE, TOP_LEFT, false);
+    //spinDisplayChar(_SPACE, TOP_RIGHT, false);
+    //spinDisplayChar(_SPACE, BOTTOM_LEFT, true);
+    //spinDisplayChar(_SPACE, BOTTOM_RIGHT, true);
 }
 
 void loop()
 {
+    digitalWrite(LED_BUILTIN, acknowledged);
+
     receiveSerial();
+
+    if (connected) {
+        toggleMute();
+    }
 }
 
 /* #region Display Functions */
@@ -173,17 +209,17 @@ void receiveSerial() {
     }
 
     while (Serial.available() > 0) {
-        byte incomming = Serial.read();
+        byte incoming = Serial.read();
         lastByteTime = millis();
 
         switch (rxState) {
             case WAIT_START:
-                if (incomming == START_BYTE) {
+                if (incoming == START_BYTE) {
                     rxState = READ_COMMAND;
                 }
                 break;
             case READ_COMMAND:
-                rxCommand = incomming;
+                rxCommand = incoming;
                 
                 if (rxCommand >= sizeof(commandLengths)) {
                     rxState = WAIT_START;
@@ -192,7 +228,7 @@ void receiveSerial() {
                 }
                 break;
             case READ_LENGTH:
-                rxLength = incomming;
+                rxLength = incoming;
 
                 if (rxLength != commandLengths[rxCommand] || rxLength > MAX_DATA_LENGTH) {
                     rxState = WAIT_START;
@@ -203,9 +239,9 @@ void receiveSerial() {
                 break;
             case READ_DATA:
                 if (dataIndex < rxLength) {
-                    rxData[dataIndex++] = incomming;
+                    rxData[dataIndex++] = incoming;
                 } else {
-                    rxChecksum = incomming;
+                    rxChecksum = incoming;
 
                     processPacket();
 
@@ -237,21 +273,66 @@ void processPacket() {
     switch (rxCommand)
     {
         case ACK:
-            // handle acknowledgement
+            acknowledged = true;
             break;
         case PING:
-            // handle ping
+            Serial.println("ping received, sending acknowledge");
+            sendToPC(ACK, nullptr, 0);
             break;
         case UPDATE_STAT:
             updateStat(rxData[0], rxData[1]);
-            break;
-        case CHANGE_STAT:
-            changeStat(rxData[0], rxData[1], rxData[2], rxData[3]);
             break;
         case SET_STATE:
             setState(rxData[0], rxData[1]);
             break;
     }
+}
+
+bool checkAcknowledged() {
+    if (acknowledged) {
+        acknowledged = false;
+        return true;
+    }
+
+    return false;
+}
+
+void sendToPC(Command command, byte *data, byte dataLength) {
+    // Confirm command is valid
+    if (command < 0 || command >= COMMAND_COUNT) {
+        Serial.print("Error: Unknown command received while creating packet: ");
+        Serial.println(command);
+        return;
+    }
+
+    // Confirm data length is valid for command specified
+    if (dataLength != commandLengths[command]) {
+        Serial.print("Error: Invalid payload for command ");
+        Serial.print(command);
+        Serial.print(" expected ");
+        Serial.print(commandLengths[command]);
+        Serial.print(", got ");
+        Serial.println(dataLength);
+        return;
+    }
+
+    // Create packet array
+    int packetLength = 4 + dataLength;
+    byte packet[packetLength] = {START_BYTE, command, dataLength};
+
+    // Add data and calc checksum
+    byte checksum = 0;
+    checksum ^= command;
+    checksum ^= dataLength;
+
+    for (byte i = 0; i < dataLength; i++) {
+        packet[i + 3] = data[i];
+        checksum ^= data[i];
+    }
+
+    packet[packetLength - 1] = checksum;
+
+    Serial.write(packet, packetLength);
 }
 
 /* #endregion*/
@@ -271,24 +352,13 @@ void updateStat(byte statId, byte newValue) {
     spinDisplayChar(newValue % 10, BOTTOM_RIGHT, true);
 }
 
-void changeStat(byte statId, byte nameChar1, byte nameChar2, byte newValue) {
-    Stat* stat = getStat(statId);
-
-    if (stat == nullptr) {
-        return;
-    }
-
-    stat->char1 = nameChar1;
-    stat->char2 = nameChar2;
-
-    spinDisplayChar(nameChar1, TOP_LEFT, false);
-    spinDisplayChar(nameChar2, TOP_RIGHT, false);
-    spinDisplayChar(newValue / 10, BOTTOM_LEFT, true);
-    spinDisplayChar(newValue % 10, BOTTOM_RIGHT, true);
-}
-
 void setState(byte stateId, byte newValue) {
-
+    switch (stateId) {
+        case MUTE:
+            muteLedState = newValue;
+            digitalWrite(muteLedPin, muteLedState);
+            break;
+    }
 }
 
 /* #endregion */
@@ -296,13 +366,38 @@ void setState(byte stateId, byte newValue) {
 /* #region Stat Functions */
 
 Stat* getStat(byte id) {
-    for (byte i = 0; i < sizeof(stats) / sizeof(stats[0]); i++) {
+    for (byte i = 0; i < sizeof(stats) / sizeof(byte); i++) {
         if (stats[i].id == id) {
             return &stats[i];
         }
     }
 
     return nullptr;    // Unknown stat
+}
+
+/* #endregion */
+
+/* #region State Functions */
+
+void toggleMute() {
+    int reading = digitalRead(muteBtnPin);
+
+    if (reading != lastMuteBtnState) {
+        lastDebounceTime = millis();
+    }
+
+    if ((millis() - lastDebounceTime) > debounceDelay) {
+        if (reading != muteBtnState) {
+            muteBtnState = reading;
+
+            if (muteBtnState == LOW) {
+                // Send mute change command
+                byte data[1] = {0x00};
+                sendToPC(BTN_PRESS, data, 1);
+            }
+        }
+    }
+    lastMuteBtnState = reading;
 }
 
 /* #endregion */
