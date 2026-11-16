@@ -136,6 +136,13 @@ void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
     for (int row = 0; row < 4; row++) {
         byte charRow = pgm_read_byte(&font[charIndex][row]);
 
+        lc.setLed(0, rowOffset + row, colOffset, true);
+        lc.setLed(0, rowOffset + row, colOffset + 1, true);
+        lc.setLed(0, rowOffset + row, colOffset + 2, true);
+        lc.setLed(0, rowOffset + row, colOffset + 3, true);
+
+        delay(25);
+        
         for (int col = 0; col < 4; col++) {
             // Set blank column position
             int charCol = blankBefore ? col - 1 : col;
@@ -145,31 +152,13 @@ void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
             if (charCol >= 0 && charCol < 3) {
                 pixelOn = bitRead(charRow, 2 - charCol);
             }
-            
+
             lc.setLed(0, rowOffset + row, colOffset + col, pixelOn);
         }
 
-        delay(50);
-    }
-}
-
-/*
-/// @brief Cycles through displaying each character in the font definition until the specified character is found
-/// @param charIndex The index of the character to display (see `font.h`)
-/// @param quadrant Which quadrant of the LED matrix to display the character in
-/// @param blankBefore If the blank column should be before the character instead of after
-void spinDisplayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
-    // Cycle through each character in the font definition
-    for (int i = 0; i < 37; i++) {
-        displayChar(i, quadrant, blankBefore);
-        // Delay so its not too fast
         delay(25);
-        if (i == charIndex) {
-            break;  // Stop once character is found/displayed
-        }
     }
 }
-*/
 
 /* #endregion */
 
@@ -341,11 +330,12 @@ void updateStat(byte statId, byte newValue) {
         return;
     }
     
-    // Spin display the chars for the stat
+    
+    // Display the chars for the stat
     displayChar(stat->char1, TOP_LEFT);
     displayChar(stat->char2, TOP_RIGHT);
-
-    // Spin display the digits for the value
+    
+    // Display the digits for the value
     displayChar(newValue / 10, BOTTOM_LEFT, true);
     displayChar(newValue % 10, BOTTOM_RIGHT, true);
 }
@@ -386,7 +376,6 @@ Stat* getStat(byte id) {
 
 /// @brief Handle mute button press
 void handleMuteBtn() {
-    Serial.println(micros());
     // Read the button state
     int reading = digitalRead(muteBtnPin);
     
@@ -412,9 +401,6 @@ void handleMuteBtn() {
     
     // Save new state
     lastMuteBtnState = reading;
-
-    Serial.print("End: ");
-    Serial.println(micros());
 }
 
 /* #endregion */
@@ -427,7 +413,7 @@ void setup() {
 
     // Setup LED Matrix
     lc.shutdown(0, false);
-    lc.setIntensity(0, 8);
+    lc.setIntensity(0, 3);
     lc.clearDisplay(0);
 
     // Setup LEDs
@@ -438,10 +424,10 @@ void setup() {
     Serial.begin(115200);
 
     // Do boot animation
-    displayChar(_SPACE, TOP_LEFT);
-    displayChar(_SPACE, TOP_RIGHT);
-    displayChar(_SPACE, BOTTOM_LEFT, true);
-    displayChar(_SPACE, BOTTOM_RIGHT, true);
+    // displayChar(_A, TOP_LEFT);
+    // displayChar(_A, TOP_RIGHT);
+    // displayChar(_A, BOTTOM_LEFT, true);
+    // displayChar(_A, BOTTOM_RIGHT, true);
 }
 
 void loop() {
