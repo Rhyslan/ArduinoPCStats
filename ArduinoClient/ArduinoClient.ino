@@ -3,9 +3,8 @@
 
 #include "font.h"
 
-#define MAX_DATA_LENGTH 4
+#define MAX_DATA_LENGTH 2
 #define START_BYTE 0xAA
-
 
 /* #region Display Variables */
 
@@ -103,45 +102,6 @@ unsigned long debounceDelay = 50;
 
 /* #endregion */
 
-void setup() {
-    // Setup IO pins
-    pinMode(muteLedPin, OUTPUT);
-    pinMode(LED_BUILTIN, OUTPUT);
-    pinMode(muteBtnPin, INPUT_PULLUP);
-
-    // Setup LED Matrix
-    lc.shutdown(0, false);
-    lc.setIntensity(0, 8);
-    lc.clearDisplay(0);
-
-    // Setup LEDs
-    digitalWrite(muteLedPin, muteLedState);
-    digitalWrite(LED_BUILTIN, acknowledged);
-
-    // Start serial connection
-    Serial.begin(115200);
-
-    // Do boot animation
-    spinDisplayChar(_SPACE, TOP_LEFT, false);
-    spinDisplayChar(_SPACE, TOP_RIGHT, false);
-    spinDisplayChar(_SPACE, BOTTOM_LEFT, true);
-    spinDisplayChar(_SPACE, BOTTOM_RIGHT, true);
-}
-
-void loop() {
-    // Use built-in LED to show acknowledged state
-    digitalWrite(LED_BUILTIN, acknowledged);
-
-    receiveSerial();
-
-    // If connected, allow stuff to happen, otherwise wait for connection acknowledgement
-    if (connected) {
-        toggleMute();
-    } else {
-        connected = checkAcknowledged();
-    }
-}
-
 /* #region Display Functions */
 
 /// @brief Displays a character in the specified quadrant of the LED matrix
@@ -188,9 +148,12 @@ void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
             
             lc.setLed(0, rowOffset + row, colOffset + col, pixelOn);
         }
+
+        delay(50);
     }
 }
 
+/*
 /// @brief Cycles through displaying each character in the font definition until the specified character is found
 /// @param charIndex The index of the character to display (see `font.h`)
 /// @param quadrant Which quadrant of the LED matrix to display the character in
@@ -206,6 +169,7 @@ void spinDisplayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) 
         }
     }
 }
+*/
 
 /* #endregion */
 
@@ -225,6 +189,7 @@ void receiveSerial() {
 
         switch (rxState) {
             case WAIT_START:
+                // Process command if byte is START_BYTE
                 if (incoming == START_BYTE) {
                     rxState = READ_COMMAND;
                 }
@@ -232,6 +197,7 @@ void receiveSerial() {
             case READ_COMMAND:
                 rxCommand = incoming;
                 
+                // Reset if unknown command
                 if (rxCommand >= sizeof(commandLengths)) {
                     rxState = WAIT_START;
                 } else {
@@ -241,6 +207,7 @@ void receiveSerial() {
             case READ_LENGTH:
                 rxLength = incoming;
 
+                // Reset if length is incorrect for command or longer than max data length
                 if (rxLength != commandLengths[rxCommand] || rxLength > MAX_DATA_LENGTH) {
                     rxState = WAIT_START;
                 } else {
@@ -249,13 +216,16 @@ void receiveSerial() {
                 }
                 break;
             case READ_DATA:
+                // If still reading data, add byte to data array
                 if (dataIndex < rxLength) {
                     rxData[dataIndex++] = incoming;
                 } else {
+                    // When done reading data, get checksum byte
                     rxChecksum = incoming;
 
                     processPacket();
 
+                    // Return to waiting state
                     rxState = WAIT_START;
                 }
                 break;
@@ -263,6 +233,8 @@ void receiveSerial() {
     }
 }
 
+/// @brief Verify that the calculated checksum is the same as the checksum byte
+/// @return Bool indicating if checksum is valid
 bool verifyChecksum() {
     byte checksum = 0;
     
@@ -276,17 +248,19 @@ bool verifyChecksum() {
     return checksum == rxChecksum;
 }
 
+/// @brief Process received packet. Validates checksum then handles the command
 void processPacket() {
     if (!verifyChecksum()) {
         return;
     }
 
+    // Handle command
     switch (rxCommand) {
         case ACK:
             acknowledged = true;
             break;
         case PING:
-            Serial.println("ping received, sending acknowledge");
+            // Send acknowledgement to ping
             sendToPC(ACK, nullptr, 0);
             break;
         case UPDATE_STAT:
@@ -298,6 +272,8 @@ void processPacket() {
     }
 }
 
+/// @brief Checks if Python has acknowledged a command since the last check
+/// @return Bool indicating acknowledgement
 bool checkAcknowledged() {
     if (acknowledged) {
         acknowledged = false;
@@ -307,6 +283,10 @@ bool checkAcknowledged() {
     return false;
 }
 
+/// @brief Sends a command to the Python script
+/// @param command Comand ID
+/// @param data Data array payload to be sent
+/// @param dataLength Length of the data array
 void sendToPC(Command command, byte *data, byte dataLength) {
     // Confirm command is valid
     if (command < 0 || command >= COMMAND_COUNT) {
@@ -342,6 +322,7 @@ void sendToPC(Command command, byte *data, byte dataLength) {
 
     packet[packetLength - 1] = checksum;
 
+    // Send the packet
     Serial.write(packet, packetLength);
 }
 
@@ -349,22 +330,33 @@ void sendToPC(Command command, byte *data, byte dataLength) {
 
 /* #region Commands Functions */
 
+/// @brief Handle updating the display with a new stat value
+/// @param statId ID of the stat to display
+/// @param newValue New value fo the stat to display
 void updateStat(byte statId, byte newValue) {
+    // Get stat info
     Stat* stat = getStat(statId);
 
     if (stat == nullptr) {
         return;
     }
     
-    spinDisplayChar(stat->char1, TOP_LEFT, false);
-    spinDisplayChar(stat->char2, TOP_RIGHT, false);
-    spinDisplayChar(newValue / 10, BOTTOM_LEFT, true);
-    spinDisplayChar(newValue % 10, BOTTOM_RIGHT, true);
+    // Spin display the chars for the stat
+    displayChar(stat->char1, TOP_LEFT);
+    displayChar(stat->char2, TOP_RIGHT);
+
+    // Spin display the digits for the value
+    displayChar(newValue / 10, BOTTOM_LEFT, true);
+    displayChar(newValue % 10, BOTTOM_RIGHT, true);
 }
 
+/// @brief Handle updating a state value
+/// @param stateId ID of the state to change
+/// @param newValue New value for the state
 void setState(byte stateId, byte newValue) {
     switch (stateId) {
         case MUTE:
+            // Save the new mute state and update the LED
             muteLedState = newValue;
             digitalWrite(muteLedPin, muteLedState);
             break;
@@ -375,6 +367,9 @@ void setState(byte stateId, byte newValue) {
 
 /* #region Stat Functions */
 
+/// @brief Get a stat from its ID
+/// @param id ID of the stat to look for
+/// @return Pointer to Stat struct with matching ID. Returns `nullptr` if stat is unknown
 Stat* getStat(byte id) {
     for (byte i = 0; i < sizeof(stats) / sizeof(byte); i++) {
         if (stats[i].id == id) {
@@ -389,25 +384,76 @@ Stat* getStat(byte id) {
 
 /* #region State Functions */
 
-void toggleMute() {
+/// @brief Handle mute button press
+void handleMuteBtn() {
+    Serial.println(micros());
+    // Read the button state
     int reading = digitalRead(muteBtnPin);
-
+    
+    // Reset debounce timer if state changed
     if (reading != lastMuteBtnState) {
         lastDebounceTime = millis();
     }
-
+    
+    // If state remains the same after `debounceDelay`, use the new value
     if ((millis() - lastDebounceTime) > debounceDelay) {
+        // If the state has changed, toggle the mute state
         if (reading != muteBtnState) {
             muteBtnState = reading;
-
+            
+            // Only process if button is pressed
             if (muteBtnState == LOW) {
                 // Send mute change command
-                byte data[1] = {0x00};
-                sendToPC(BTN_PRESS, data, 1);
+                byte data[1] = {MUTE};
+                sendToPC(BTN_PRESS, data, sizeof(data) / sizeof(byte));
             }
         }
     }
+    
+    // Save new state
     lastMuteBtnState = reading;
+
+    Serial.print("End: ");
+    Serial.println(micros());
 }
 
 /* #endregion */
+
+void setup() {
+    // Setup IO pins
+    pinMode(muteLedPin, OUTPUT);
+    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(muteBtnPin, INPUT_PULLUP);
+
+    // Setup LED Matrix
+    lc.shutdown(0, false);
+    lc.setIntensity(0, 8);
+    lc.clearDisplay(0);
+
+    // Setup LEDs
+    digitalWrite(muteLedPin, muteLedState);
+    digitalWrite(LED_BUILTIN, acknowledged);
+
+    // Start serial connection
+    Serial.begin(115200);
+
+    // Do boot animation
+    displayChar(_SPACE, TOP_LEFT);
+    displayChar(_SPACE, TOP_RIGHT);
+    displayChar(_SPACE, BOTTOM_LEFT, true);
+    displayChar(_SPACE, BOTTOM_RIGHT, true);
+}
+
+void loop() {
+    // Use built-in LED to show acknowledged state
+    digitalWrite(LED_BUILTIN, acknowledged);
+
+    receiveSerial();
+
+    // If connected, allow stuff to happen, otherwise wait for connection acknowledgement
+    if (connected) {
+        handleMuteBtn();
+    } else {
+        connected = checkAcknowledged();
+    }
+}

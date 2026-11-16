@@ -7,7 +7,7 @@ from enum import Enum, auto
 
 # Constants
 START_BYTE = 0xAA
-MAX_DATA_LENGTH = 4
+MAX_DATA_LENGTH = 2
 RX_TIMEOUT = 100
 
 # Enums
@@ -26,7 +26,19 @@ class ReceiveState(Enum):
     READ_DATA = auto()
 
 
+class StatID(Enum):
+    CPU_USAGE = 0
+    CPU_TEMP = auto()
+    GPU_USAGE = auto()
+    GPU_TEMP = auto()
+    RAM_USAGE = auto()
+
+
 class ButtonID(Enum):
+    MUTE = 0
+
+
+class StateID(Enum):
     MUTE = 0
 
 
@@ -137,19 +149,19 @@ class ArduinoConnectionManager:
                 case ReceiveState.READ_LENGTH:
                     self.rx_length = incoming[0]
 
-                    # Reset if length is invalid for received command (wrong length or too long for any command)
+                    # Reset if length is incorrect for command or longer than max data length
                     if self.rx_length != self.command_lengths[Command(self.rx_command)] or self.rx_length > MAX_DATA_LENGTH:
                         self.rx_state = ReceiveState.WAIT_START
                     else:
                         self.data_index = 0
                         self.rx_state = ReceiveState.READ_DATA
                 case ReceiveState.READ_DATA:
-                    # If still reading data, append byte to data array
+                    # If still reading data, add byte to data array
                     if self.data_index < self.rx_length:
                         self.rx_data[self.data_index] = incoming[0]
                         self.data_index += 1
                     else:
-                        # When done reading data, get checksum
+                        # When done reading data, get checksum byte
                         self.rx_checksum = incoming[0]
 
                         self._process_packet()
@@ -203,7 +215,7 @@ class ArduinoConnectionManager:
     def check_acknowledged(self):
         """
         Checks if the Arduino has acknowledged a command since the last check
-        :return: Boolean indicating acknowledgement
+        :return: Bool indicating acknowledgement
         """
         if self.acknowledged:
             self.acknowledged = False
@@ -249,7 +261,7 @@ class ArduinoConnectionManager:
                 #do muting
                 self.muted = not self.muted
                 # Change Arduino muted state
-                self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([0x00, self.muted])))
+                self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([StateID.MUTE.value, self.muted])))
 
 
 def millis():
