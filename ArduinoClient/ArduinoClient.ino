@@ -144,7 +144,7 @@ void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false, bool
         }
 
         if (animated) {
-            delay(25);
+            delay(15);
         }
     }
 }

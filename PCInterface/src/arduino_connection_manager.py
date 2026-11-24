@@ -61,16 +61,7 @@ class ArduinoConnectionManager:
 
         self.debug_mode = debug_mode
 
-        if not self.debug_mode:
-            try:
-                self.arduino = serial.Serial(port=com_port, baudrate=115200, timeout=1)
-            except serial.serialutil.SerialException as e:
-                print(f"Unable to connect to Arduino on port \"{com_port}\".")
-                if input("Would you like to continue in debug mode? (y/n)") == "y":
-                    self.debug_mode = True
-                else:
-                    raise RuntimeError("Unable to run without connection")
-
+        self.arduino = serial.Serial(port=com_port, baudrate=115200, timeout=1)
 
         # Length of data array for each command
         self.command_lengths = {
@@ -96,14 +87,10 @@ class ArduinoConnectionManager:
         self.states = states
         self.lock = lock
 
-        # Skip connection check if in debug mode
-        if self.debug_mode:
-            print("Running in debug mode")
-            return
-
         # Wait for connection acknowledge from Arduino
         self.connected = False
-        print("Waiting for Arduino connection...")
+        if debug_mode:
+            print("Waiting for Arduino connection...")
         self.send_to_arduino(self.create_packet(Command.PING))
         ping_timer = Timer(1000)
         while not self.connected:
@@ -117,15 +104,13 @@ class ArduinoConnectionManager:
                 # Inform Arduino of connection success
                 self.send_to_arduino(self.create_packet(Command.ACK))
                 self.connected = True
-                print("Arduino connected")
+                if self.debug_mode:
+                    print("Arduino connected")
 
     def read(self) -> None:
         """
         Read serial messages from the Arduino
         """
-        # Skip if in debug mode
-        if self.debug_mode:
-            return
 
         # Timeout if waiting too long for next byte of the command
         if self.rx_state != ReceiveState.WAIT_START and monotonic_ms() - self.last_byte_time > RX_TIMEOUT:
@@ -145,7 +130,8 @@ class ArduinoConnectionManager:
                     else:
                         debug_data = incoming + self.arduino.readline()
                         text = debug_data.decode("utf-8", errors="ignore").strip()
-                        print(f"Arduino debug: {text}")
+                        if self.debug_mode:
+                            print(f"Arduino debug: {text}")
                 case ReceiveState.READ_COMMAND:
                     self.rx_command = incoming[0]
 
@@ -215,9 +201,9 @@ class ArduinoConnectionManager:
         Send a packet to the Arduino. Only prints packet if in debug mode
         :param bytearray packet: Packet to send
         """
-        print(f"Sending packet: {packet.hex()}...")
-        if not self.debug_mode:
-            self.arduino.write(packet)
+        if self.debug_mode:
+            print(f"Sending packet: {packet.hex()}...")
+        self.arduino.write(packet)
 
     def check_acknowledged(self) -> bool:
         """
@@ -243,7 +229,8 @@ class ArduinoConnectionManager:
             checksum ^= self.rx_data[x]
 
         if checksum != self.rx_checksum:
-            print("Checksum failed")
+            if self.debug_mode:
+                print("Checksum failed")
             return
 
         # Handle command
@@ -269,6 +256,5 @@ class ArduinoConnectionManager:
 
                 with self.lock:
                     self.states.muted = not self.states.muted
-
-                # Change Arduino muted state
-                self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([StateID.MUTE.value, self.states.muted])))
+                    # Change Arduino muted state
+                    self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([StateID.MUTE.value, self.states.muted])))

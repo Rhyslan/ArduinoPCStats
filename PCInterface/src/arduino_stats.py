@@ -48,7 +48,8 @@ class ArduinoStats:
         """
 
         """
-        print("Starting...")
+        if self.debug_mode:
+            print("Starting...")
         self.stat_updater.start()
         self.comms_thread.start()
         self.discord_sync.start()
@@ -70,7 +71,8 @@ class ArduinoStats:
         """
 
         """
-        print("Stopping")
+        if self.debug_mode:
+            print("Stopping")
         with self.lock:
             self.running = False
 
@@ -160,4 +162,4 @@ class ArduinoStats:
                     self.states.muted = is_muted
                     self.states.update_mute = True
 
-            time.sleep(1)
+            time.sleep(.2)
