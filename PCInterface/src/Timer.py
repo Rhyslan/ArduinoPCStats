@@ -5,13 +5,13 @@ import time
 
 
 class Timer:
-    def __init__(self, duration):
+    def __init__(self, duration_ms, wait_start=False):
         """
         A simple timer used to check and run things at intervals
-        :param duration: Duration/interval of the timer
+        :param duration: Duration/interval of the timer in milliseconds
         """
-        self.duration = duration
-        self.elapsed = monotonic_ms()
+        self.duration = duration_ms
+        self.elapsed = monotonic_ms() if wait_start else 0
 
     def reset(self) -> None:
         """

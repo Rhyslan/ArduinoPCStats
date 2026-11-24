@@ -1,9 +1,13 @@
 # Filename: ArduinoConnectionManager.py
 # Created: 13/11/2026
 # Description: Communication manager for messages between Arduino and Python
+import threading
+from sys import thread_info
+
+import _thread
 import serial
 from enum import Enum, auto
-from Timer import Timer
+from Timer import Timer, monotonic_ms
 
 # Constants
 START_BYTE = 0xAA
@@ -61,7 +65,7 @@ class ArduinoConnectionManager:
                 if input("Would you like to continue in debug mode? (y/n)") == "y":
                     self.debug_mode = True
                 else:
-                    quit()
+                    raise RuntimeError("Unable to run without connection")
 
 
         # Length of data array for each command
@@ -118,14 +122,14 @@ class ArduinoConnectionManager:
             return
 
         # Timeout if waiting too long for next byte of the command
-        if self.rx_state != ReceiveState.WAIT_START and Timer.monotonic_ms() - self.last_byte_time > RX_TIMEOUT:
+        if self.rx_state != ReceiveState.WAIT_START and monotonic_ms() - self.last_byte_time > RX_TIMEOUT:
             self.rx_state = ReceiveState.WAIT_START
 
         # Loop while bytes are available
         while self.arduino.in_waiting > 0:
             # Get next byte
             incoming = self.arduino.read(1)
-            self.last_byte_time = Timer.monotonic_ms()
+            self.last_byte_time = monotonic_ms()
 
             match self.rx_state:
                 case ReceiveState.WAIT_START:
