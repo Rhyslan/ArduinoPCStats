@@ -22,23 +22,22 @@ class ArduinoStats:
             "RAM Usage": 50,
         }
 
+        self.lastValue = None
+
         self.running = True
         self.lock = threading.Lock()
 
         self.stat_updater = threading.Thread(target=self.update_stats)
         self.comms_thread = threading.Thread(target=self.arduino_comms)
-        self.ender = threading.Thread(target=self.stopper)
 
     def start(self) -> None:
         print("Starting...")
         self.stat_updater.start()
         self.comms_thread.start()
-        self.ender.start()
 
         try:
             self.comms_thread.join()
             self.stat_updater.join()
-            self.ender.join()
         except RuntimeError as e:
             print(e)
             with self.lock:
@@ -48,14 +47,8 @@ class ArduinoStats:
             with self.lock:
                 self.running = False
 
-    def stopper(self):
-        end_timer = Timer(100000, True)
-
-        while self.running:
-            if end_timer.is_done():
-                self.stop()
-
     def stop(self):
+        print("Stopping")
         with self.lock:
             self.running = False
 
@@ -74,13 +67,17 @@ class ArduinoStats:
                     curr_stat = 0
 
             if stat_update_timer.is_done():
-                arduino.send_to_arduino(arduino.create_packet(
-                    Command.UPDATE_STAT,
-                    bytes([
-                        curr_stat,
-                        list(self.stat_values.values())[curr_stat]
-                    ])
-                ))
+                value_to_send = list(self.stat_values.values())[curr_stat]
+                if value_to_send != self.lastValue:
+                    arduino.send_to_arduino(arduino.create_packet(
+                        Command.UPDATE_STAT,
+                        bytes([
+                            curr_stat,
+                            value_to_send
+                        ])
+                    ))
+
+                    self.lastValue = value_to_send
 
     def update_stats(self) -> None:
         get_stat_timer = Timer(1000)

@@ -81,6 +81,8 @@ Stat stats[] = {
     {0x04, _R, _U},   // RAM Usage
 };
 
+byte lastValue;
+
 Stat* lastStat = nullptr;
 
 /* #endregion */
@@ -111,38 +113,19 @@ unsigned long debounceDelay = 50;
 /// @param quadrant Which quadrant of the LED matrix to display the character in
 /// @param blankBefore If the blank column should be before the character instead of after
 void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false, bool animated=false) {
-    int rowOffset;
-    int colOffset;
-
     // Set offsets depending on which quadrant to display in
-    switch (quadrant) {
-        case TOP_LEFT:
-            rowOffset = 0;
-            colOffset = 0;
-            break;
-        case TOP_RIGHT:
-            rowOffset = 0;
-            colOffset = 4;
-            break;
-        case BOTTOM_LEFT:
-            rowOffset = 4;
-            colOffset = 0;
-            break;
-        case BOTTOM_RIGHT:
-            rowOffset = 4;
-            colOffset = 4;
-            break;
-    }
+    int rowOffset = (quadrant == BOTTOM_LEFT || quadrant == BOTTOM_RIGHT) ? 4 : 0;
+    int colOffset = (quadrant == TOP_RIGHT || quadrant == BOTTOM_RIGHT) ? 4 : 0;
 
     // Loop through each pixel in the character and update the LED matrix
     for (int row = 0; row < 4; row++) {
         byte charRow = pgm_read_byte(&font[charIndex][row]);
 
         if (animated) {
-            lc.setLed(0, rowOffset + row, colOffset, false);
-            lc.setLed(0, rowOffset + row, colOffset + 1, false);
-            lc.setLed(0, rowOffset + row, colOffset + 2, false);
-            lc.setLed(0, rowOffset + row, colOffset + 3, false);
+            lc.setLed(0, row + rowOffset, colOffset, false);
+            lc.setLed(0, row + rowOffset, colOffset + 1, false);
+            lc.setLed(0, row + rowOffset, colOffset + 2, false);
+            lc.setLed(0, row + rowOffset, colOffset + 3, false);
     
             delay(25);
         }
@@ -157,7 +140,7 @@ void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false, bool
                 pixelOn = bitRead(charRow, 2 - charCol);
             }
 
-            lc.setLed(0, rowOffset + row, colOffset + col, pixelOn);
+            lc.setLed(0, row + rowOffset, col + colOffset, pixelOn);
         }
 
         if (animated) {
@@ -341,16 +324,19 @@ void updateStat(byte statId, byte newValue) {
         displayChar(stat->char1, TOP_LEFT, false, true);
         displayChar(stat->char2, TOP_RIGHT, false, true);
 
+        if (newValue != lastValue) {
+            // Display the digits for the value
+            displayChar(newValue / 10, BOTTOM_LEFT, true, true);
+            displayChar(newValue % 10, BOTTOM_RIGHT, true, true);
+        }
+    } else if (newValue != lastValue) {
         // Display the digits for the value
-        displayChar(newValue / 10, BOTTOM_LEFT, true, true);
-        displayChar(newValue % 10, BOTTOM_RIGHT, true, true);
+        displayChar(newValue / 10, BOTTOM_LEFT, true);
+        displayChar(newValue % 10, BOTTOM_RIGHT, true);
     }
-    
-    // Display the digits for the value
-    displayChar(newValue / 10, BOTTOM_LEFT, true);
-    displayChar(newValue % 10, BOTTOM_RIGHT, true);
 
     lastStat = stat;
+    lastValue = newValue;
 }
 
 /// @brief Handle updating a state value

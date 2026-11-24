@@ -248,7 +248,8 @@ class ArduinoConnectionManager:
                 # Send ping acknowledgement to Arduino
                 self.send_to_arduino(self.create_packet(Command.ACK))
             case Command.BTN_PRESS:
-                self._handle_btn_press(self.rx_data[0])
+                threading.Thread(target=self._handle_btn_press, args=(self.rx_data[0],)).start()
+                #self._handle_btn_press(self.rx_data[0])
 
     def _handle_btn_press(self, btn_id) -> None:
         """
