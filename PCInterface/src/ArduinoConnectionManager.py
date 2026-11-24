@@ -2,8 +2,8 @@
 # Created: 13/11/2026
 # Description: Communication manager for messages between Arduino and Python
 import serial
-import time
 from enum import Enum, auto
+from Timer import Timer
 
 # Constants
 START_BYTE = 0xAA
@@ -95,12 +95,11 @@ class ArduinoConnectionManager:
         self.connected = False
         print("Waiting for Arduino connection...")
         self.send_to_arduino(self.create_packet(Command.PING))
-        last_ping = millis()
+        ping_timer = Timer(1000)
         while not self.connected:
             # Ping Arduino every second
-            if millis() - last_ping > 1000:
+            if ping_timer.is_done():
                 self.send_to_arduino(self.create_packet(Command.PING))
-                last_ping = millis()
 
             self.read()
 
@@ -110,24 +109,23 @@ class ArduinoConnectionManager:
                 self.connected = True
                 print("Arduino connected")
 
-    def read(self):
+    def read(self) -> None:
         """
         Read serial messages from the Arduino
-        :return: None
         """
         # Skip if in debug mode
         if self.debug_mode:
             return
 
         # Timeout if waiting too long for next byte of the command
-        if self.rx_state != ReceiveState.WAIT_START and millis() - self.last_byte_time > RX_TIMEOUT:
+        if self.rx_state != ReceiveState.WAIT_START and Timer.monotonic_ms() - self.last_byte_time > RX_TIMEOUT:
             self.rx_state = ReceiveState.WAIT_START
 
         # Loop while bytes are available
         while self.arduino.in_waiting > 0:
             # Get next byte
             incoming = self.arduino.read(1)
-            self.last_byte_time = millis()
+            self.last_byte_time = Timer.monotonic_ms()
 
             match self.rx_state:
                 case ReceiveState.WAIT_START:
@@ -169,12 +167,12 @@ class ArduinoConnectionManager:
                         # Return to waiting state
                         self.rx_state = ReceiveState.WAIT_START
 
-    def create_packet(self, command, data=b''):
+    def create_packet(self, command, data=b'') -> bytearray:
         """
         Create a new packet to send to the Arduino
         :param Command command: Command ID
         :param bytes data: Array of bytes to send as the payload
-        :return bytearray: New packet bytearray
+        :return: New packet bytearray
         """
         # Ensure command is known
         if command not in self.command_lengths:
@@ -202,17 +200,16 @@ class ArduinoConnectionManager:
 
         return packet
 
-    def send_to_arduino(self, packet):
+    def send_to_arduino(self, packet) -> None:
         """
         Send a packet to the Arduino. Only prints packet if in debug mode
         :param bytearray packet: Packet to send
-        :return: None
         """
         print(f"Sending packet: {packet.hex()}...")
         if not self.debug_mode:
             self.arduino.write(packet)
 
-    def check_acknowledged(self):
+    def check_acknowledged(self) -> bool:
         """
         Checks if the Arduino has acknowledged a command since the last check
         :return: Bool indicating acknowledgement
@@ -222,10 +219,9 @@ class ArduinoConnectionManager:
             return True
         return False
 
-    def _process_packet(self):
+    def _process_packet(self) -> None:
         """
         Process received packet. Validates checksum then handles the command
-        :return: None
         """
         # Verify checksum
         checksum = 0
@@ -250,11 +246,10 @@ class ArduinoConnectionManager:
             case Command.BTN_PRESS:
                 self._handle_btn_press(self.rx_data[0])
 
-    def _handle_btn_press(self, btn_id):
+    def _handle_btn_press(self, btn_id) -> None:
         """
         Handles button press command
         :param int btn_id:
-        :return: None
         """
         match ButtonID(btn_id):
             case ButtonID.MUTE:
@@ -262,11 +257,3 @@ class ArduinoConnectionManager:
                 self.muted = not self.muted
                 # Change Arduino muted state
                 self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([StateID.MUTE.value, self.muted])))
-
-
-def millis():
-    """
-    Get monotonic time in milliseconds
-    :return: Monotonic time in milliseconds
-    """
-    return time.monotonic_ns() // 1_000_000

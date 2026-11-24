@@ -1,15 +1,12 @@
 # Filename: main.py
 # Created: 12/11/2026
 # Description: Main program for Arduino PC stat display
-import time
-from ArduinoConnectionManager import ArduinoConnectionManager, millis, Command, StatID
-
-
-interval = 5000
+from ArduinoConnectionManager import ArduinoConnectionManager, Command, StatID
+from Timer import Timer
 
 def main():
-    arduino = ArduinoConnectionManager("COM3")
-    last_time = millis()
+    arduino = ArduinoConnectionManager("COM3", True)
+    stat_change_timer = Timer(5000)
     curr_stat = 1
 
     arduino.send_to_arduino(arduino.create_packet(Command.UPDATE_STAT, bytes([StatID.CPU_TEMP.value, 10])))
@@ -17,7 +14,7 @@ def main():
     while True:
         arduino.read()
 
-        if millis() - last_time > interval:
+        if stat_change_timer.is_done():
             match curr_stat:
                 case 0:
                     arduino.send_to_arduino(arduino.create_packet(Command.UPDATE_STAT, bytes([StatID.CPU_TEMP.value, 10])))
@@ -33,8 +30,6 @@ def main():
             curr_stat += 1
             if curr_stat >= len(StatID):
                 curr_stat = 0
-
-            last_time = millis()
 
 if __name__ == '__main__':
     main()

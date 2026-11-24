@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "ArduinoClient",
+			"path": "ArduinoClient"
+		},
+		{
+			"name": "ArduinoPCStats",
+			"path": "."
+		}
+	],
+	"settings": {}
+}
