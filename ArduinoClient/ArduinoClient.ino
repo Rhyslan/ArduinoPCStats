@@ -81,6 +81,8 @@ Stat stats[] = {
     {0x04, _R, _U},   // RAM Usage
 };
 
+Stat* lastStat = nullptr;
+
 /* #endregion */
 
 /* #region States Variables */
@@ -108,7 +110,7 @@ unsigned long debounceDelay = 50;
 /// @param charIndex The index of the character to display (see `font.h`)
 /// @param quadrant Which quadrant of the LED matrix to display the character in
 /// @param blankBefore If the blank column should be before the character instead of after
-void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
+void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false, bool animated=false) {
     int rowOffset;
     int colOffset;
 
@@ -136,12 +138,14 @@ void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
     for (int row = 0; row < 4; row++) {
         byte charRow = pgm_read_byte(&font[charIndex][row]);
 
-        lc.setLed(0, rowOffset + row, colOffset, true);
-        lc.setLed(0, rowOffset + row, colOffset + 1, true);
-        lc.setLed(0, rowOffset + row, colOffset + 2, true);
-        lc.setLed(0, rowOffset + row, colOffset + 3, true);
-
-        delay(25);
+        if (animated) {
+            lc.setLed(0, rowOffset + row, colOffset, false);
+            lc.setLed(0, rowOffset + row, colOffset + 1, false);
+            lc.setLed(0, rowOffset + row, colOffset + 2, false);
+            lc.setLed(0, rowOffset + row, colOffset + 3, false);
+    
+            delay(25);
+        }
         
         for (int col = 0; col < 4; col++) {
             // Set blank column position
@@ -156,7 +160,9 @@ void displayChar(byte charIndex, Quadrant quadrant, bool blankBefore=false) {
             lc.setLed(0, rowOffset + row, colOffset + col, pixelOn);
         }
 
-        delay(25);
+        if (animated) {
+            delay(25);
+        }
     }
 }
 
@@ -330,14 +336,21 @@ void updateStat(byte statId, byte newValue) {
         return;
     }
     
-    
-    // Display the chars for the stat
-    displayChar(stat->char1, TOP_LEFT);
-    displayChar(stat->char2, TOP_RIGHT);
+    if (stat != lastStat) {
+        // Display the chars for the stat
+        displayChar(stat->char1, TOP_LEFT, false, true);
+        displayChar(stat->char2, TOP_RIGHT, false, true);
+
+        // Display the digits for the value
+        displayChar(newValue / 10, BOTTOM_LEFT, true, true);
+        displayChar(newValue % 10, BOTTOM_RIGHT, true, true);
+    }
     
     // Display the digits for the value
     displayChar(newValue / 10, BOTTOM_LEFT, true);
     displayChar(newValue % 10, BOTTOM_RIGHT, true);
+
+    lastStat = stat;
 }
 
 /// @brief Handle updating a state value
