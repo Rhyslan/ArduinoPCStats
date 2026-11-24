@@ -3,3 +3,5 @@ pyserial
 psutil
 gputil
 wintmp==1.2.0
+pywinauto
+keyboard

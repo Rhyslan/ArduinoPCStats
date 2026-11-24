@@ -1,13 +1,15 @@
-# Filename: ArduinoConnectionManager.py
+# Filename: arduino_connection_manager.py
 # Created: 13/11/2026
 # Description: Communication manager for messages between Arduino and Python
 import threading
-from sys import thread_info
+import keyboard
 
 import _thread
 import serial
 from enum import Enum, auto
-from Timer import Timer, monotonic_ms
+
+#from arduino_stats import States
+from timer import Timer, monotonic_ms
 
 # Constants
 START_BYTE = 0xAA
@@ -48,11 +50,13 @@ class StateID(Enum):
 
 # Main class
 class ArduinoConnectionManager:
-    def __init__(self, com_port, debug_mode=False):
+    def __init__(self, com_port, states, lock, debug_mode=False):
         """
         Connection manager for Arduino and Python
         :param str com_port: COM port for the Arduino
         :param bool debug_mode: Enable debug mode to disable serial connection
+        :param States states:
+        :param _thread.RLock lock:
         """
 
         self.debug_mode = debug_mode
@@ -88,7 +92,9 @@ class ArduinoConnectionManager:
 
         # States
         self.acknowledged = False
-        self.muted = False
+        #self.muted = False
+        self.states = states
+        self.lock = lock
 
         # Skip connection check if in debug mode
         if self.debug_mode:
@@ -258,7 +264,11 @@ class ArduinoConnectionManager:
         """
         match ButtonID(btn_id):
             case ButtonID.MUTE:
-                #do muting
-                self.muted = not self.muted
+                # Toggle Discord mute
+                keyboard.press_and_release("ctrl+shift+alt+F12")
+
+                with self.lock:
+                    self.states.muted = not self.states.muted
+
                 # Change Arduino muted state
-                self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([StateID.MUTE.value, self.muted])))
+                self.send_to_arduino(self.create_packet(Command.SET_STATE, bytes([StateID.MUTE.value, self.states.muted])))

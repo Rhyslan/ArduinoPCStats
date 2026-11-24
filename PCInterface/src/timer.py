@@ -1,4 +1,4 @@
-# Filename: Timer.py
+# Filename: timer.py
 # Created: 24/11/2026
 # Description: Simple timer
 import time
